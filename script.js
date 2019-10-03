@@ -28,7 +28,7 @@ const canvas = document.getElementsByTagName('canvas')[0];
 resizeCanvas();
 
 let config = {
-    SIM_RESOLUTION: 128,
+    SIM_RESOLUTION: 256,
     DYE_RESOLUTION: 1024,
     CAPTURE_RESOLUTION: 512,
     DENSITY_DISSIPATION: 1,
@@ -84,7 +84,9 @@ if (!ext.supportLinearFiltering) {
     config.SUNRAYS = false;
 }
 
+var gui;
 startGUI();
+startAudioSampling();
 
 function getWebGLContext (canvas) {
     const params = { alpha: true, depth: false, stencil: false, antialias: false, preserveDrawingBuffer: false };
@@ -124,7 +126,7 @@ function getWebGLContext (canvas) {
         formatR = getSupportedFormat(gl, gl.RGBA, gl.RGBA, halfFloatTexType);
     }
 
-    ga('send', 'event', isWebGL2 ? 'webgl2' : 'webgl', formatRGBA == null ? 'not supported' : 'supported');
+    //ga('send', 'event', isWebGL2 ? 'webgl2' : 'webgl', formatRGBA == null ? 'not supported' : 'supported');
 
     return {
         gl,
@@ -177,7 +179,7 @@ function supportRenderTextureFormat (gl, internalFormat, format, type) {
 }
 
 function startGUI () {
-    var gui = new dat.GUI({ width: 300 });
+    gui = new dat.GUI({ width: 300 });
     gui.add(config, 'DYE_RESOLUTION', { 'high': 1024, 'medium': 512, 'low': 256, 'very low': 128 }).name('quality').onFinishChange(initFramebuffers);
     gui.add(config, 'SIM_RESOLUTION', { '32': 32, '64': 64, '128': 128, '256': 256 }).name('sim resolution').onFinishChange(initFramebuffers);
     gui.add(config, 'DENSITY_DISSIPATION', 0, 4.0).name('density diffusion');
@@ -1520,6 +1522,7 @@ function correctDeltaY (delta) {
     return delta;
 }
 
+
 function generateColor () {
     let c = HSVtoRGB(Math.random(), 1.0, 1.0);
     c.r *= 0.15;
@@ -1602,3 +1605,97 @@ function hashCode (s) {
     }
     return hash;
 };
+
+
+//AUDIO VIZ STUFF
+// Globals
+var aCtx;
+var analyser;
+var microphone;
+var volume;
+var FFTData = [];
+var bufferLength;
+
+
+
+function colorFromHSV (hsv, intensity) {
+    let c = HSVtoRGB(hsv, 1.0, 1.0);
+    c.r *= intensity;
+    c.g *= intensity;
+    c.b *= intensity;
+    return c;
+}
+
+function showColourBurst (x, y, dx, dy, color, radius) {
+    gl.viewport(0, 0, velocity.width, velocity.height);
+    splatProgram.bind();
+    gl.uniform1i(splatProgram.uniforms.uTarget, velocity.read.attach(0));
+    gl.uniform1f(splatProgram.uniforms.aspectRatio, canvas.width / canvas.height);
+    gl.uniform2f(splatProgram.uniforms.point, x, y);
+    gl.uniform3f(splatProgram.uniforms.color, dx, dy, 0.0);
+    gl.uniform1f(splatProgram.uniforms.radius, correctRadius(radius));
+    blit(velocity.write.fbo);
+    velocity.swap();
+
+    gl.viewport(0, 0, dye.width, dye.height);
+    gl.uniform1i(splatProgram.uniforms.uTarget, dye.read.attach(0));
+    gl.uniform3f(splatProgram.uniforms.color, color.r, color.g, color.b);
+    blit(dye.write.fbo);
+    dye.swap();
+}
+
+
+function 
+/* get new audio 
+context object */
+createAudioCtx(){
+    let AudioContext = window.AudioContext || window.webkitAudioContext;
+    return new AudioContext();
+}
+
+function startAudioSampling(){
+    gui.close();
+    let constraints = {audio:true, video:false}
+    navigator.getUserMedia(constraints, function(stream){
+        aCtx = createAudioCtx();
+        analyser = aCtx.createAnalyser();
+        analyser.fftSize = 32;
+        analyser.smoothingTimeConstant = 0;
+        microphone = aCtx.createMediaStreamSource(stream);
+        microphone.connect(analyser);
+        //analyser.connect(aCtx.destination);
+        bufferLength = analyser.frequencyBinCount;
+        process();
+        //setInterval(show, 200);
+    }, function(err){console.log(err)});
+}
+
+function process(){
+    setInterval(function(){
+        FFTData = new Float32Array(analyser.frequencyBinCount);
+        analyser.getFloatFrequencyData(FFTData);
+        show()
+    },10);
+}
+
+// THIS IS WHERE THE VISUAL STUFF HAPPENS
+function show(){
+    var goodPowers = [];
+    //console.log(FFTData);
+    for (var i = bufferLength - 1; i >= 0; i--) {
+        if(i % 1 === 0) {
+            var power = FFTData[i];
+            if(power > -100){
+                goodPowers.push(power);
+            }
+        }
+    }
+    for (var i = goodPowers.length - 1; i >= 0; i--) {
+        var power = goodPowers[i];
+        power += 100;
+        showColourBurst ((1.0/goodPowers.length)*i, 0.05, (Math.random()-0.5)*50, power, colorFromHSV((1.0/goodPowers.length+power*0.01)*i, 0.02),0.001)
+    }
+    config.BLOOM_INTENSITY  = volume*2;
+    //console.clear();
+    //;
+}
