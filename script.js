@@ -1717,9 +1717,9 @@ function startAudioSampling(){
                         //positions[index++] = -5 + 0.1 * ffts[_i][j];
                         //positions[index++] = -15 - _i;
 
-                        var power = 10*features.amplitudeSpectrum[_i];
-                        console.log(power);
-                        showColourBurst((1.0/features.amplitudeSpectrum.length)*_i, 0.05, (Math.random()-0.5)*50, power, colorFromHSV((1.0/features.amplitudeSpectrum.length+power*0.01)*_i, 0.02),0.001)
+                        var power = features.amplitudeSpectrum[_i];
+                        //console.log(power);
+                        showColourBurst((1.0/features.amplitudeSpectrum.length)*_i+0.5, 0.05, (Math.random()-0.5)*50, power, colorFromHSV((1.0/features.amplitudeSpectrum.length+power*0.01)*_i, 0.02),0.001)
                     }
 
                     //lines.children[_i].geometry.attributes.position.needsUpdate = true;
