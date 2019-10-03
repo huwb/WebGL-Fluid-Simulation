@@ -84,6 +84,22 @@ if (!ext.supportLinearFiltering) {
     config.SUNRAYS = false;
 }
 
+
+var initializeFFTs = function initializeFFTs(number, pointCount) {
+    var ffts = [];
+    for (var i = 0; i < number; i++) {
+      ffts.push(Array.apply(null, Array(pointCount)).map(Number.prototype.valueOf, 0));
+    }
+
+    return ffts;
+};
+
+var fftCount = 20;
+var fftBufferSize = 1024;
+var ffts = initializeFFTs(fftCount, fftBufferSize);
+var buffer = null;
+
+
 var gui;
 startGUI();
 startAudioSampling();
@@ -1615,7 +1631,8 @@ var microphone;
 var volume;
 var FFTData = [];
 var bufferLength;
-
+//var Audio = __webpack_require__(0);
+var a = new Audio(fftBufferSize);
 
 
 function colorFromHSV (hsv, intensity) {
@@ -1658,6 +1675,7 @@ function startAudioSampling(){
     let constraints = {audio:true, video:false}
     navigator.getUserMedia(constraints, function(stream){
         aCtx = createAudioCtx();
+        /*
         analyser = aCtx.createAnalyser();
         analyser.fftSize = 32;
         analyser.smoothingTimeConstant = 0;
@@ -1667,7 +1685,61 @@ function startAudioSampling(){
         bufferLength = analyser.frequencyBinCount;
         process();
         //setInterval(show, 200);
+        */
+
+        microphone = aCtx.createMediaStreamSource(stream);
+
+
+        if (typeof Meyda === "undefined") {
+          console.log("Meyda could not be found! Have you included it?");
+        }
+        else {
+          const analyzer = Meyda.createMeydaAnalyzer({
+            "audioContext": aCtx,
+            "source": microphone,
+            "bufferSize": 1024,
+            "featureExtractors": ["amplitudeSpectrum"],
+            "callback": features => {
+                //console.log(features.amplitudeSpectrum[0]);
+
+                //ffts.pop();
+                //ffts.unshift(features.amplitudeSpectrum);
+                //var windowedSignalBuffer = a.meyda._m.signal;
+
+                for (var _i = 0; _i < ffts.length; _i+=1)
+                {
+                    //var positions = lines.children[_i].geometry.attributes.position.array;
+                    var index = 0;
+
+                    //for (var j = 0; j < ffts[_i].length * 3; j++)
+                    {
+                        //positions[index++] = 10.7 + 8 * Math.log10(j / ffts[_i].length);
+                        //positions[index++] = -5 + 0.1 * ffts[_i][j];
+                        //positions[index++] = -15 - _i;
+
+                        var power = 10*features.amplitudeSpectrum[_i];
+                        console.log(power);
+                        showColourBurst((1.0/features.amplitudeSpectrum.length)*_i, 0.05, (Math.random()-0.5)*50, power, colorFromHSV((1.0/features.amplitudeSpectrum.length+power*0.01)*_i, 0.02),0.001)
+                    }
+
+                    //lines.children[_i].geometry.attributes.position.needsUpdate = true;
+                }
+
+
+            }
+          });
+          analyzer.start();
+        }
+
+
+
     }, function(err){console.log(err)});
+    
+
+    //aCtx = createAudioCtx();
+
+
+
 }
 
 function process(){
@@ -1680,6 +1752,33 @@ function process(){
 
 // THIS IS WHERE THE VISUAL STUFF HAPPENS
 function show(){
+
+/*
+    ffts.pop();
+    ffts.unshift(features.amplitudeSpectrum);
+    var windowedSignalBuffer = a.meyda._m.signal;
+
+    for (var _i = 0; _i < ffts.length; _i++)
+    {
+        //var positions = lines.children[_i].geometry.attributes.position.array;
+        var index = 0;
+
+        for (var j = 0; j < ffts[_i].length * 3; j++)
+        {
+            //positions[index++] = 10.7 + 8 * Math.log10(j / ffts[_i].length);
+            //positions[index++] = -5 + 0.1 * ffts[_i][j];
+            //positions[index++] = -15 - _i;
+
+            var power = ffts[_i];
+            showColourBurst((1.0/ffts.length)*i, 0.05, (Math.random()-0.5)*50, power, colorFromHSV((1.0/ffts.length+power*0.01)*i, 0.02),0.001)
+        }
+
+        //lines.children[_i].geometry.attributes.position.needsUpdate = true;
+    }
+*/
+
+
+    /*
     var goodPowers = [];
     //console.log(FFTData);
     for (var i = bufferLength - 1; i >= 0; i--) {
@@ -1695,7 +1794,9 @@ function show(){
         power += 100;
         showColourBurst ((1.0/goodPowers.length)*i, 0.05, (Math.random()-0.5)*50, power, colorFromHSV((1.0/goodPowers.length+power*0.01)*i, 0.02),0.001)
     }
-    config.BLOOM_INTENSITY  = volume*2;
+    */
+
+    config.BLOOM_INTENSITY  = 1;
     //console.clear();
     //;
 }
