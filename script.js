@@ -1659,53 +1659,46 @@ function startAudioSampling()
     	audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false },
     	video: false
     }
-    navigator.getUserMedia(constraints, function(stream){
+    navigator.getUserMedia(constraints, function(stream)
+    {
         var aCtx = createAudioCtx();
 
         var microphone = aCtx.createMediaStreamSource(stream);
 
-        if (typeof Meyda === "undefined") {
-          console.log("Meyda could not be found! Have you included it?");
-        }
-        else {
-            var bufferSize = 1024;
+        var bufferSize = 256;
 
-            const analyzer = Meyda.createMeydaAnalyzer(
-            {
-                "audioContext": aCtx,
-                "source": microphone,
-                "bufferSize": bufferSize,
-                "featureExtractors": ["amplitudeSpectrum", "rms"],
-                "callback": features => {
-                    // This lambda gets called each timestep it seems, and gives the requested data in 'features'
-                    //console.log(features.amplitudeSpectrum.length);
+        const analyzer = Meyda.createMeydaAnalyzer(
+        {
+            "audioContext": aCtx,
+            "source": microphone,
+            "bufferSize": bufferSize,
+            "featureExtractors": ["amplitudeSpectrum", "rms"],
+            "callback": features => {
 
-                    // There can be many values, this helper accumulates power values into buckets (number of 'bars' in an equaliser)
-                    var buckets = 64;
+                // There can be many values, this helper accumulates power values into buckets (number of 'bars' in an equaliser)
+                var buckets = bufferSize / 2;
 
-                    var stride = features.amplitudeSpectrum.length / buckets;
+                for (var _i = 0.0; _i < buckets; _i += 1.0)
+                {
+                    var power = features.amplitudeSpectrum[_i];
 
-                    for (var _i = 0; _i < features.amplitudeSpectrum.length; _i += stride)
+                    if(power > 0.1)
                     {
-                        var power = 0;
-                        for(var _j = 0; _j < stride; _j++)
-                        {
-                            power += features.amplitudeSpectrum[_i + _j];
-                        }
+                        var x = _i / buckets;
+                        // Remap to stretch out lower freqs?
+                        x = Math.pow(x, 0.5);
 
-                        if(power > 1)
-                        {
-                            showColourBurst((1.0/features.amplitudeSpectrum.length)*_i, 0.05, (Math.random()-0.5)*50, power, colorFromHSV((1.0/features.amplitudeSpectrum.length+power*0.01)*_i, 0.02),0.001)
-                        }
+                        showColourBurst(x, 0.05, (Math.random()-0.5)*100, power, colorFromHSV((1.0/features.amplitudeSpectrum.length+power*0.01)*_i, 0.02),0.001)
                     }
-
-                    // TODO - ive hacked this in to be driven by rms which is a measure of intensity of the audio. there are other features that can be requested, see the
-                    // featureExtractors
-                    config.BLOOM_INTENSITY  = features.rms;
                 }
-            });
-            analyzer.start();
-        }
+
+                // TODO - ive hacked this in to be driven by rms which is a measure of intensity of the audio. there are other features that can be requested, see the
+                // featureExtractors
+                config.BLOOM_INTENSITY  = features.rms;
+            }
+        });
+
+        analyzer.start();
     }, function(err){console.log(err)});
 }
 
