@@ -1653,7 +1653,12 @@ createAudioCtx(){
 function startAudioSampling()
 {
     gui.close();
-    let constraints = {audio:true, video:false}
+
+    // Using audio settings suggested on the webaudio slack
+    let constraints = {
+    	audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false },
+    	video: false
+    }
     navigator.getUserMedia(constraints, function(stream){
         var aCtx = createAudioCtx();
 
