@@ -31,23 +31,23 @@ resizeCanvas();
 
 let config = {
     SIM_RESOLUTION: 256,
-    DYE_RESOLUTION: 1024,
+    DYE_RESOLUTION: 512,
     CAPTURE_RESOLUTION: 512,
     DENSITY_DISSIPATION: 1,
     VELOCITY_DISSIPATION: 0.2,
     PRESSURE: 0.8,
-    PRESSURE_ITERATIONS: 20,
-    CURL: 30,
+    PRESSURE_ITERATIONS: 50,
+    CURL: 0,
     SPLAT_RADIUS: 0.25,
     SPLAT_FORCE: 6000,
     SHADING: true,
     COLORFUL: true,
-    COLOR_UPDATE_SPEED: 10,
+    COLOR_UPDATE_SPEED: 1,
     PAUSED: false,
     BACK_COLOR: { r: 0, g: 0, b: 0 },
     TRANSPARENT: false,
     BLOOM: true,
-    BLOOM_ITERATIONS: 8,
+    BLOOM_ITERATIONS: 15,
     BLOOM_RESOLUTION: 256,
     BLOOM_INTENSITY: 0.8,
     BLOOM_THRESHOLD: 0.6,
@@ -1614,14 +1614,14 @@ function hashCode (s) {
 
 
 function colorFromHSV (hsv, intensity) {
-    let c = HSVtoRGB(hsv, 1.0, 1.0);
+    let c = HSVtoRGB(hsv, 0.5, 0.5);
     c.r *= intensity;
     c.g *= intensity;
     c.b *= intensity;
     return c;
 }
 
-function showColourBurst (x, y, dx, dy, color, radius) {
+function showColourBurst (x, y, dx, dy, color, radius, intensity) {
     gl.viewport(0, 0, velocity.width, velocity.height);
     splatProgram.bind();
     gl.uniform1i(splatProgram.uniforms.uTarget, velocity.read.attach(0));
@@ -1634,7 +1634,7 @@ function showColourBurst (x, y, dx, dy, color, radius) {
 
     gl.viewport(0, 0, dye.width, dye.height);
     gl.uniform1i(splatProgram.uniforms.uTarget, dye.read.attach(0));
-    gl.uniform3f(splatProgram.uniforms.color, color.r, color.g, color.b);
+    gl.uniform3f(splatProgram.uniforms.color, color.r*intensity, color.g*intensity, color.b*intensity);
     blit(dye.write.fbo);
     dye.swap();
 }
@@ -1649,6 +1649,44 @@ createAudioCtx(){
 }
 
 // TODO move out to show() function so it get processed at regular intervals
+
+let lastUpdateTime2 = Date.now();
+
+var colourCache = [];
+var offsetCache = [];
+var colourTimer = 0;
+
+function calcDeltaTime2 () {
+    let now = Date.now();
+    let dt = (now - lastUpdateTime2) / 1000;
+    dt = Math.min(dt, 0.2);
+    lastUpdateTime2 = now;
+    return dt;
+}
+
+// Interpolates two [r,g,b] colors and returns an [r,g,b] of the result
+// Taken from the awesome ROT.js roguelike dev library at
+// https://github.com/ondras/rot.js
+var interpolateColor = function(color1, color2, factor) {
+    //if(color1 == undefined || color2 == undefined) return;
+    var result = color1;
+    result.r += factor*(color2.r-color1.r);
+    result.g += factor*(color2.g-color1.g);
+    result.b += factor*(color2.b-color1.b);
+    return result;
+};
+
+
+function getColorFromCache(index){
+
+    var col1Index = wrap(Math.floor(offsetCache[index]+colourTimer),0,colourCache.length-1);
+    var col2Index = wrap(Math.ceil(offsetCache[index]+colourTimer),0,colourCache.length-1)
+    var delta = colourTimer%1;
+
+    //console.log(colourCache[col2Index]);
+    return interpolateColor(colourCache[col1Index],colourCache[col2Index],delta);
+    return 0;
+}
 
 function startAudioSampling()
 {
@@ -1667,34 +1705,83 @@ function startAudioSampling()
 
         var bufferSize = 256;
 
+        var dateObject = new Date();
+        
+        var smoothedSpectralCentroid = 0;
+
+        var energy = 0;
+
+        for (var i = bufferSize/2 - 1; i >= 0; i--) {
+            var c = HSVtoRGB(Math.random(), 0.9, 1.0);
+
+            colourCache.push(c);
+            offsetCache.push(Math.ceil(Math.random()*(bufferSize/2)));
+        }
+
         const analyzer = Meyda.createMeydaAnalyzer(
         {
+            
             "audioContext": aCtx,
             "source": microphone,
             "bufferSize": bufferSize,
-            "featureExtractors": ["amplitudeSpectrum", "rms"],
+            "featureExtractors": ["amplitudeSpectrum", "rms", "energy", "spectralKurtosis"],
             "callback": features => {
+                var dt = calcDeltaTime2();
+                colourTimer = wrap(colourTimer+dt,0,100);
 
+                var sharpTone = 0;
+                if(features.spectralKurtosis<-20 && features.rms > 0.05)
+                sharpTone = 1;
+                
                 // There can be many values, this helper accumulates power values into buckets (number of 'bars' in an equaliser)
                 var buckets = bufferSize / 2;
 
+                if(sharpTone){
+                    showColourBurst(0.05, 0.05, 50, 50, getColorFromCache(50),0.001, 0.5);
+                    showColourBurst(0.95, 0.05, -50, 50, getColorFromCache(50),0.001, 0.5);
+                    showColourBurst(0.05, 0.95, 50, -50, getColorFromCache(50),0.001, 0.5);
+                    showColourBurst(0.95, 0.95, -50, -50, getColorFromCache(50),0.001, 0.5);
+                }
+                
                 for (var _i = 0.0; _i < buckets; _i += 1.0)
                 {
+                    
                     var power = features.amplitudeSpectrum[_i];
+                    if(power>0.1){
+                         // Remap to stretch out lower freqs?
+                        //(Math.PI*2)*
+                        var slice = ((2 * Math.PI / buckets) * _i)+colourTimer*5;
+                        var rampedPower = Math.pow(power, 0.5)
+                        var radius = 0.2;
+                        var x = radius * Math.cos(slice) + 0.5;
+                        var y = radius * Math.sin(slice) + 0.5;
 
-                    if(power > 0.1)
-                    {
-                        var x = _i / buckets;
-                        // Remap to stretch out lower freqs?
-                        x = Math.pow(x, 0.5);
+                        var px = Math.pow(power,0.2) * 2 * Math.cos(slice);
+                        var py = Math.pow(power,0.2) * 2 * Math.sin(slice);
 
-                        showColourBurst(x, 0.05, (Math.random()-0.5)*100, power, colorFromHSV((1.0/features.amplitudeSpectrum.length+power*0.01)*_i, 0.02),0.001)
+                        showColourBurst(x, y, px, py, getColorFromCache(_i),0.001, rampedPower*0.005);
                     }
+
                 }
 
+                
                 // TODO - ive hacked this in to be driven by rms which is a measure of intensity of the audio. there are other features that can be requested, see the
                 // featureExtractors
-                config.BLOOM_INTENSITY  = features.rms;
+                config.BLOOM_INTENSITY *= 0.97;
+                config.BLOOM_INTENSITY = Math.max(config.BLOOM_INTENSITY, features.rms);
+
+                energy *= 0.97;
+                energy = Math.max(energy, (features.energy/256));
+                var energyMult = energy*6;
+                //console.log(energyMult);
+                if(energyMult>0.10){
+                    var slice = ((2 * Math.PI / 100) * colourTimer * 20);
+                    var px = energyMult*50 * Math.cos(slice);
+                    var py = energyMult*50 * Math.sin(slice);
+                    showColourBurst(0.5, 0.5, px, py, getColorFromCache(1),0.01, energyMult*0.05);
+                }
+                //console.log(smoothedSpectralCentroid);
+                config.CURL = Math.max(config.BLOOM_INTENSITY, 100*features.rms);
             }
         });
 
